@@ -18,22 +18,20 @@ namespace internal {
 class PlatformInterfaceDescriptor;
 
 #define INTERFACE_DESCRIPTOR_LIST(V)  \
+  V(Allocate)                         \
   V(Void)                             \
   V(ContextOnly)                      \
   V(Load)                             \
   V(LoadWithVector)                   \
-  V(LoadField)                        \
   V(LoadGlobal)                       \
   V(LoadGlobalWithVector)             \
   V(Store)                            \
   V(StoreWithVector)                  \
-  V(StoreNamedTransition)             \
   V(StoreTransition)                  \
   V(StoreGlobal)                      \
   V(StoreGlobalWithVector)            \
   V(FastNewFunctionContext)           \
   V(FastNewObject)                    \
-  V(FastNewArguments)                 \
   V(RecordWrite)                      \
   V(TypeConversion)                   \
   V(TypeConversionStackParameter)     \
@@ -50,27 +48,21 @@ class PlatformInterfaceDescriptor;
   V(ConstructWithSpread)              \
   V(ConstructWithArrayLike)           \
   V(ConstructTrampoline)              \
-  V(TransitionElementsKind)           \
   V(AbortJS)                          \
   V(AllocateHeapNumber)               \
   V(Builtin)                          \
   V(ArrayConstructor)                 \
-  V(IteratingArrayBuiltin)            \
   V(ArrayNoArgumentConstructor)       \
   V(ArraySingleArgumentConstructor)   \
   V(ArrayNArgumentsConstructor)       \
   V(Compare)                          \
   V(BinaryOp)                         \
-  V(StringAdd)                        \
   V(StringAt)                         \
   V(StringSubstring)                  \
-  V(ForInPrepare)                     \
   V(GetProperty)                      \
   V(ArgumentAdaptor)                  \
   V(ApiCallback)                      \
   V(ApiGetter)                        \
-  V(MathPowTagged)                    \
-  V(MathPowInteger)                   \
   V(GrowArrayElements)                \
   V(NewArgumentsElements)             \
   V(InterpreterDispatch)              \
@@ -79,7 +71,6 @@ class PlatformInterfaceDescriptor;
   V(InterpreterCEntry)                \
   V(ResumeGenerator)                  \
   V(FrameDropperTrampoline)           \
-  V(WasmRuntimeCall)                  \
   V(RunMicrotasks)                    \
   BUILTIN_LIST_TFS(V)
 
@@ -295,18 +286,13 @@ static const int kMaxBuiltinRegisterParams = 5;
                                                                         \
  public:
 
-#define DEFINE_EMPTY_PARAMETERS()                       \
-  enum ParameterIndices {                               \
-    kParameterCount,                                    \
-    kContext = kParameterCount /* implicit parameter */ \
-  };
-
-#define DEFINE_PARAMETERS(...)                          \
-  enum ParameterIndices {                               \
-    __VA_ARGS__,                                        \
-                                                        \
-    kParameterCount,                                    \
-    kContext = kParameterCount /* implicit parameter */ \
+#define DEFINE_PARAMETERS(...)                            \
+  enum ParameterIndices {                                 \
+    __dummy = -1, /* to be able to pass zero arguments */ \
+    ##__VA_ARGS__,                                        \
+                                                          \
+    kParameterCount,                                      \
+    kContext = kParameterCount /* implicit parameter */   \
   };
 
 #define DECLARE_BUILTIN_DESCRIPTOR(name)                                      \
@@ -348,6 +334,14 @@ class V8_EXPORT_PRIVATE VoidDescriptor : public CallInterfaceDescriptor {
   DECLARE_DESCRIPTOR(VoidDescriptor, CallInterfaceDescriptor)
 };
 
+class AllocateDescriptor : public CallInterfaceDescriptor {
+ public:
+  // No context parameter
+  enum ParameterIndices { kRequestedSize, kParameterCount };
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(AllocateDescriptor,
+                                               CallInterfaceDescriptor)
+};
+
 class ContextOnlyDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(ContextOnlyDescriptor, CallInterfaceDescriptor)
@@ -363,18 +357,6 @@ class LoadDescriptor : public CallInterfaceDescriptor {
   static const Register ReceiverRegister();
   static const Register NameRegister();
   static const Register SlotRegister();
-};
-
-// LoadFieldDescriptor is used by the shared handler that loads a field from an
-// object based on the smi-encoded field description.
-class LoadFieldDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kReceiver, kSmiHandler)
-  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(LoadFieldDescriptor,
-                                               CallInterfaceDescriptor)
-
-  static const Register ReceiverRegister();
-  static const Register SmiHandlerRegister();
 };
 
 class LoadGlobalDescriptor : public CallInterfaceDescriptor {
@@ -425,24 +407,6 @@ class StoreTransitionDescriptor : public StoreDescriptor {
 
   // Pass value, slot and vector through the stack.
   static const int kStackArgumentsCount = kPassLastArgsOnStack ? 3 : 0;
-};
-
-class StoreNamedTransitionDescriptor : public StoreTransitionDescriptor {
- public:
-  DEFINE_PARAMETERS(kReceiver, kFieldOffset, kMap, kValue, kSlot, kVector,
-                    kName)
-  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(StoreNamedTransitionDescriptor,
-                                               StoreTransitionDescriptor)
-
-  // Always pass name on the stack.
-  static const bool kPassLastArgsOnStack = true;
-  static const int kStackArgumentsCount =
-      StoreTransitionDescriptor::kStackArgumentsCount + 1;
-
-  static const Register NameRegister() { return no_reg; }
-  static const Register FieldOffsetRegister() {
-    return StoreTransitionDescriptor::NameRegister();
-  }
 };
 
 class StoreWithVectorDescriptor : public StoreDescriptor {
@@ -517,11 +481,11 @@ class LoadGlobalWithVectorDescriptor : public LoadGlobalDescriptor {
 
 class FastNewFunctionContextDescriptor : public CallInterfaceDescriptor {
  public:
-  DEFINE_PARAMETERS(kFunction, kSlots)
+  DEFINE_PARAMETERS(kScopeInfo, kSlots)
   DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(FastNewFunctionContextDescriptor,
                                                CallInterfaceDescriptor)
 
-  static const Register FunctionRegister();
+  static const Register ScopeInfoRegister();
   static const Register SlotsRegister();
 };
 
@@ -531,13 +495,6 @@ class FastNewObjectDescriptor : public CallInterfaceDescriptor {
   DECLARE_DESCRIPTOR(FastNewObjectDescriptor, CallInterfaceDescriptor)
   static const Register TargetRegister();
   static const Register NewTargetRegister();
-};
-
-class FastNewArgumentsDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kFunction)
-  DECLARE_DESCRIPTOR(FastNewArgumentsDescriptor, CallInterfaceDescriptor)
-  static const Register TargetRegister();
 };
 
 class RecordWriteDescriptor final : public CallInterfaceDescriptor {
@@ -561,13 +518,6 @@ class TypeConversionStackParameterDescriptor final
   DEFINE_PARAMETERS(kArgument)
   DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
       TypeConversionStackParameterDescriptor, CallInterfaceDescriptor)
-};
-
-class ForInPrepareDescriptor final : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kObject)
-  DECLARE_DEFAULT_DESCRIPTOR(ForInPrepareDescriptor, CallInterfaceDescriptor,
-                             kParameterCount)
 };
 
 class GetPropertyDescriptor final : public CallInterfaceDescriptor {
@@ -656,26 +606,22 @@ class ConstructStubDescriptor : public CallInterfaceDescriptor {
                                                CallInterfaceDescriptor)
 };
 
-// This descriptor is also used by DebugBreakTrampoline because it handles both
-// regular function calls and construct calls, and we need to pass new.target
-// for the latter.
+// This descriptor is also used by DebugBreakTrampoline, CompileLazy* and
+// DeserializeLazy builtins because it handles both regular function calls and
+// construct calls, and we need to pass new.target for the latter.
 class ConstructTrampolineDescriptor : public CallInterfaceDescriptor {
  public:
   DEFINE_PARAMETERS(kFunction, kNewTarget, kActualArgumentsCount)
   DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(ConstructTrampolineDescriptor,
                                                CallInterfaceDescriptor)
+  static const Register FunctionRegister();
+  static const Register NewTargetRegister();
+  static const Register ActualArgumentsCountRegister();
 };
-
 
 class CallFunctionDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(CallFunctionDescriptor, CallInterfaceDescriptor)
-};
-
-class TransitionElementsKindDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kObject, kMap)
-  DECLARE_DESCRIPTOR(TransitionElementsKindDescriptor, CallInterfaceDescriptor)
 };
 
 class AbortJSDescriptor : public CallInterfaceDescriptor {
@@ -686,7 +632,7 @@ class AbortJSDescriptor : public CallInterfaceDescriptor {
 
 class AllocateHeapNumberDescriptor : public CallInterfaceDescriptor {
  public:
-  DEFINE_EMPTY_PARAMETERS()
+  DEFINE_PARAMETERS()
   DECLARE_DESCRIPTOR(AllocateHeapNumberDescriptor, CallInterfaceDescriptor)
 };
 
@@ -701,12 +647,7 @@ class BuiltinDescriptor : public CallInterfaceDescriptor {
   static const Register TargetRegister();
 };
 
-class IteratingArrayBuiltinDescriptor : public BuiltinDescriptor {
- public:
-  DEFINE_BUILTIN_PARAMETERS(kCallback, kThisArg)
-  DECLARE_BUILTIN_DESCRIPTOR(IteratingArrayBuiltinDescriptor)
-};
-
+// TODO(jgruber): Replace with generic TFS descriptor.
 class ArrayConstructorDescriptor : public CallInterfaceDescriptor {
  public:
   DEFINE_PARAMETERS(kTarget, kNewTarget, kActualArgumentsCount, kAllocationSite)
@@ -714,28 +655,41 @@ class ArrayConstructorDescriptor : public CallInterfaceDescriptor {
                                                CallInterfaceDescriptor)
 };
 
-class ArrayNoArgumentConstructorDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kFunction, kAllocationSite, kActualArgumentsCount,
-                    kFunctionParameter)
-  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
-      ArrayNoArgumentConstructorDescriptor, CallInterfaceDescriptor)
-};
-
-class ArraySingleArgumentConstructorDescriptor
-    : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kFunction, kAllocationSite, kActualArgumentsCount,
-                    kFunctionParameter, kArraySizeSmiParameter)
-  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
-      ArraySingleArgumentConstructorDescriptor, CallInterfaceDescriptor)
-};
-
 class ArrayNArgumentsConstructorDescriptor : public CallInterfaceDescriptor {
  public:
+  // This descriptor declares only register arguments while respective number
+  // of JS arguments stay on the expression stack.
+  // The ArrayNArgumentsConstructor builtin does not access stack arguments
+  // directly it just forwards them to the runtime function.
   DEFINE_PARAMETERS(kFunction, kAllocationSite, kActualArgumentsCount)
   DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
       ArrayNArgumentsConstructorDescriptor, CallInterfaceDescriptor)
+};
+
+class ArrayNoArgumentConstructorDescriptor
+    : public ArrayNArgumentsConstructorDescriptor {
+ public:
+  // This descriptor declares same register arguments as the parent
+  // ArrayNArgumentsConstructorDescriptor and it declares indices for
+  // JS arguments passed on the expression stack.
+  DEFINE_PARAMETERS(kFunction, kAllocationSite, kActualArgumentsCount,
+                    kFunctionParameter)
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
+      ArrayNoArgumentConstructorDescriptor,
+      ArrayNArgumentsConstructorDescriptor)
+};
+
+class ArraySingleArgumentConstructorDescriptor
+    : public ArrayNArgumentsConstructorDescriptor {
+ public:
+  // This descriptor declares same register arguments as the parent
+  // ArrayNArgumentsConstructorDescriptor and it declares indices for
+  // JS arguments passed on the expression stack.
+  DEFINE_PARAMETERS(kFunction, kAllocationSite, kActualArgumentsCount,
+                    kFunctionParameter, kArraySizeSmiParameter)
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
+      ArraySingleArgumentConstructorDescriptor,
+      ArrayNArgumentsConstructorDescriptor)
 };
 
 class CompareDescriptor : public CallInterfaceDescriptor {
@@ -749,13 +703,6 @@ class BinaryOpDescriptor : public CallInterfaceDescriptor {
  public:
   DEFINE_PARAMETERS(kLeft, kRight)
   DECLARE_DESCRIPTOR(BinaryOpDescriptor, CallInterfaceDescriptor)
-};
-
-
-class StringAddDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kLeft, kRight)
-  DECLARE_DESCRIPTOR(StringAddDescriptor, CallInterfaceDescriptor)
 };
 
 // This desciptor is shared among String.p.charAt/charCodeAt/codePointAt
@@ -797,22 +744,6 @@ class ApiGetterDescriptor : public CallInterfaceDescriptor {
   static const Register ReceiverRegister();
   static const Register HolderRegister();
   static const Register CallbackRegister();
-};
-
-class MathPowTaggedDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kExponent)
-  DECLARE_DESCRIPTOR(MathPowTaggedDescriptor, CallInterfaceDescriptor)
-
-  static const Register exponent();
-};
-
-class MathPowIntegerDescriptor : public CallInterfaceDescriptor {
- public:
-  DEFINE_PARAMETERS(kExponent)
-  DECLARE_DESCRIPTOR(MathPowIntegerDescriptor, CallInterfaceDescriptor)
-
-  static const Register exponent();
 };
 
 // TODO(turbofan): We should probably rename this to GrowFastElementsDescriptor.
@@ -874,16 +805,9 @@ class FrameDropperTrampolineDescriptor final : public CallInterfaceDescriptor {
                                                CallInterfaceDescriptor)
 };
 
-class WasmRuntimeCallDescriptor final : public CallInterfaceDescriptor {
- public:
-  DEFINE_EMPTY_PARAMETERS()
-  DECLARE_DEFAULT_DESCRIPTOR(WasmRuntimeCallDescriptor, CallInterfaceDescriptor,
-                             0)
-};
-
 class RunMicrotasksDescriptor final : public CallInterfaceDescriptor {
  public:
-  DEFINE_EMPTY_PARAMETERS()
+  DEFINE_PARAMETERS()
   DECLARE_DEFAULT_DESCRIPTOR(RunMicrotasksDescriptor, CallInterfaceDescriptor,
                              0)
 };

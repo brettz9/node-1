@@ -35,6 +35,18 @@ class Handle;
 class Isolate;
 class JSArrayBuffer;
 
+class AtomicsWaitWakeHandle {
+ public:
+  explicit AtomicsWaitWakeHandle(Isolate* isolate) : isolate_(isolate) {}
+
+  void Wake();
+  inline bool has_stopped() const { return stopped_; }
+
+ private:
+  Isolate* isolate_;
+  bool stopped_ = false;
+};
+
 class FutexWaitListNode {
  public:
   FutexWaitListNode()
@@ -52,10 +64,13 @@ class FutexWaitListNode {
   friend class FutexWaitList;
 
   base::ConditionVariable cond_;
+  // prev_ and next_ are protected by FutexEmulation::mutex_.
   FutexWaitListNode* prev_;
   FutexWaitListNode* next_;
   void* backing_store_;
   size_t wait_addr_;
+  // waiting_ and interrupted_ are protected by FutexEmulation::mutex_
+  // if this node is currently contained in FutexEmulation::wait_list_.
   bool waiting_;
   bool interrupted_;
 
@@ -110,6 +125,11 @@ class FutexEmulation : public AllStatic {
  private:
   friend class FutexWaitListNode;
 
+  // `mutex_` protects the composition of `wait_list_` (i.e. no elements may be
+  // added or removed without holding this mutex), as well as the `waiting_`
+  // and `interrupted_` fields for each individual list node that is currently
+  // part of the list. It must be the mutex used together with the `cond_`
+  // condition variable of such nodes.
   static base::LazyMutex mutex_;
   static base::LazyInstance<FutexWaitList>::type wait_list_;
 };

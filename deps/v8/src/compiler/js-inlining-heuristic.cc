@@ -50,7 +50,7 @@ int CollectFunctions(Node* node, Handle<JSFunction>* functions,
 }
 
 bool CanInlineFunction(Handle<SharedFunctionInfo> shared) {
-  // Built-in functions are handled by the JSBuiltinReducer.
+  // Built-in functions are handled by the JSCallReducer.
   if (shared->HasBuiltinFunctionId()) return false;
 
   // Only choose user code for inlining.
@@ -709,7 +709,7 @@ bool JSInliningHeuristic::CandidateCompare::operator()(
 }
 
 void JSInliningHeuristic::PrintCandidates() {
-  OFStream os(stdout);
+  StdoutStream os;
   os << "Candidates for inlining (size=" << candidates_.size() << "):\n";
   for (const Candidate& candidate : candidates_) {
     os << "  #" << candidate.node->id() << ":"
