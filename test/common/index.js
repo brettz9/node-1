@@ -48,7 +48,7 @@ Object.defineProperty(exports, 'PORT', {
 exports.isMainThread = (() => {
   try {
     return require('worker_threads').isMainThread;
-  } catch {
+  } catch (e) {
     // Worker module not enabled → only a single main thread exists.
     return true;
   }
@@ -80,7 +80,7 @@ exports.isGlibc = () => {
     const nmOut = spawnSync('nm', ['-D', libcInfo[0][1]]).stdout;
     if (/gnu_get_libc_version/.test(nmOut))
       return isGlibc = true;
-  } catch {}
+  } catch (e) {}
   return isGlibc = false;
 };
 

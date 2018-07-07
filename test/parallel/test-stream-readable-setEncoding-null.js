@@ -10,6 +10,6 @@ const { Readable } = require('stream');
   assert.strictEqual(readable._readableState.encoding, 'hex');
 
   readable.setEncoding(null);
-
+  console.log('eee', readable._readableState.encoding);
   assert.strictEqual(readable._readableState.encoding, 'utf8');
 }
